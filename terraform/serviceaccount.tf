@@ -16,7 +16,7 @@ resource "kubernetes_service_account_v1" "app_sa" {
 
     annotations = {
       # IRSA Role ARN 주입
-      "eks.amazonaws.com/role-arn" = module.secrets_manager_irsa.iam_role_arn
+      "eks.amazonaws.com/role-arn" = module.app_irsa.iam_role_arn
     }
   }
 

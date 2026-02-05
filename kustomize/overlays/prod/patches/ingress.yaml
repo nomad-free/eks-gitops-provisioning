@@ -3,6 +3,12 @@ kind: Ingress
 metadata:
   name: app-ingress
 spec:
+  tls:
+    - hosts:
+        - dev.playbuilder.xyz
+        - custody.playbuilder.xyz
+        - datalab.playbuilder.xyz
+      # secretName 없음 = NGINX 기본 인증서 사용 (Cloudflare가 Origin 인증서 검증 안함)
   rules:
     # 1. 메인 도메인
     - host: playbuilder.xyz
