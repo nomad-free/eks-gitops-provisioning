@@ -20,6 +20,7 @@ resource "kubernetes_service_account_v1" "app_sa" {
     }
   }
 
+
   # 보안: 앱이 K8s API를 직접 호출하지 않는다면 false 권장
   automount_service_account_token = false
 

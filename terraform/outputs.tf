@@ -90,5 +90,5 @@ output "service_account_name" {
 
 output "service_account_irsa_role" {
   description = "ServiceAccount에 연결된 IRSA Role ARN"
-  value       = module.secrets_manager_irsa.iam_role_arn
+  value       = module.app_irsa.iam_role_arn
 }

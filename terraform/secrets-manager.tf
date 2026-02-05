@@ -174,31 +174,3 @@ module "external_secrets_irsa" {
   tags = local.common_tags
 }
 
-# 📌 섹션 5: 애플리케이션 IRSA
-
-# 용도: 애플리케이션 Pod에서 Secrets Manager 직접 접근
-# (External Secrets 외에 앱에서 직접 시크릿 읽을 때 사용)
-module "app_irsa" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "5.50.0"
-
-  role_name = "${local.cluster_name}-secrets-manager"
-
-  attach_external_secrets_policy = true
-  external_secrets_secrets_manager_arns = [
-    aws_secretsmanager_secret.app.arn
-  ]
-
-  oidc_providers = {
-    main = {
-      provider_arn = module.eks.oidc_provider_arn
-      # Dev와 Prod 모두에서 사용 가능
-      namespace_service_accounts = [
-        "app-dev:app-sa", # Dev 환경 ServiceAccount
-        "app-prod:app-sa" # Prod 환경 ServiceAccount
-      ]
-    }
-  }
-
-  tags = local.common_tags
-}
