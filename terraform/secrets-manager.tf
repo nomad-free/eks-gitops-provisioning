@@ -9,27 +9,99 @@ resource "aws_secretsmanager_secret" "app" {
   tags                    = local.common_tags
 }
 
-resource "aws_secretsmanager_secret_version" "app" {
+
+resource "aws_secretsmanager_secret_version" "app_db_credentials" {
   secret_id = aws_secretsmanager_secret.app.id
 
-  # [중요] 초기값은 더미(REPLACE_ME)입니다. 배포 후 AWS 콘솔에서 실제 값으로 변경해야 합니다.
+  # ---------------------------------------------------------------------------
+  # 시크릿 내용
+  # ---------------------------------------------------------------------------
+  #
+  # 자동으로 채워지는 값:
+  # - DB_HOST: RDS 엔드포인트 (예: exchange-settlement-dev.xxx.us-east-1.rds.amazonaws.com)
+  # - DB_PORT: 5432
+  # - DB_NAME: exchange_db
+  # - DB_USER: app_admin
+  # - DB_PASSWORD: 자동 생성된 32자리 비밀번호
+  #
+  # 수동으로 채워야 하는 값 (REPLACE_ME):
+  # - API_KEY, API_SECRET: 외부 API 키
+  # - JWT_SECRET: JWT 토큰 서명용
+  # - ENCRYPTION_KEY: 데이터 암호화용 (32바이트)
+  #
   secret_string = jsonencode({
-    DB_HOST     = "REPLACE_ME"
-    DB_PORT     = "5432"
-    DB_NAME     = "REPLACE_ME"
-    DB_USER     = "REPLACE_ME"
-    DB_PASSWORD = "REPLACE_ME"
+    # =========================================================================
+    # 🗄️ 데이터베이스 설정 (자동 입력)
+    # =========================================================================
+    DB_HOST     = aws_db_instance.main.address       # RDS 엔드포인트 (호스트명만)
+    DB_PORT     = tostring(local.db_port)            # "5432"
+    DB_NAME     = local.db_name                      # "exchange_db"
+    DB_USER     = local.db_username                  # "app_admin"
+    DB_PASSWORD = random_password.db_password.result # 자동 생성된 비밀번호
 
-    API_KEY    = "REPLACE_ME" # 서버 간 통신용 (M2M)
-    API_SECRET = "REPLACE_ME"
+    # =========================================================================
+    # 🔌 데이터베이스 연결 URL (편의용)
+    # =========================================================================
+    # 일부 ORM/라이브러리에서 사용하는 연결 문자열 형식
+    DATABASE_URL = "postgresql://${local.db_username}:${random_password.db_password.result}@${aws_db_instance.main.address}:${local.db_port}/${local.db_name}"
 
-    JWT_SECRET     = "REPLACE_ME" # 관리자 로그인 토큰 발급용
-    ENCRYPTION_KEY = "REPLACE_ME" # 민감 데이터 DB 저장 시 암호화용 (32byte)
+    # =========================================================================
+    # 🔑 외부 API 키 (수동 입력 필요)
+    # =========================================================================
+    # 
+    # ⚠️ 배포 후 AWS 콘솔에서 실제 값으로 변경하세요!
+    # 
+    # API_KEY: 서버 간 M2M(Machine-to-Machine) 통신용
+    # - 외부 서비스에서 이 앱의 API를 호출할 때 사용
+    # - x-api-key 헤더로 전달
+    #
+    # API_SECRET: API 요청 서명용 (선택적)
+    # - HMAC 서명 등에 사용
+    #
+    API_KEY    = "REPLACE_ME_WITH_ACTUAL_API_KEY"
+    API_SECRET = "REPLACE_ME_WITH_ACTUAL_API_SECRET"
+
+    # =========================================================================
+    # 🔐 보안 토큰 (수동 입력 필요)
+    # =========================================================================
+    #
+    # JWT_SECRET: JSON Web Token 서명용
+    # - 관리자 로그인 토큰 발급에 사용
+    # - 최소 32자 이상 권장
+    # - 예: openssl rand -hex 32 로 생성
+    #
+    # ENCRYPTION_KEY: 민감 데이터 암호화용
+    # - 정확히 32바이트(256비트) 필요
+    # - AES-256 암호화에 사용
+    # - DB에 저장되는 민감 정보(memo 등) 암호화
+    # - 예: openssl rand -hex 16 (32자리 hex = 16바이트... 아니, 32바이트 필요)
+    # - 정확히: openssl rand -base64 32 | head -c 32
+    #
+    JWT_SECRET     = "REPLACE_ME_WITH_JWT_SECRET_MIN_32_CHARS"
+    ENCRYPTION_KEY = "REPLACE_ME_32_BYTE_ENCRYPTION_KEY!" # 정확히 32자
   })
 
+  # ---------------------------------------------------------------------------
+  # 라이프사이클 설정
+  # ---------------------------------------------------------------------------
+  #
+  # 왜 ignore_changes를 사용하는가?
+  # - AWS 콘솔에서 API_KEY, JWT_SECRET 등을 수동 변경하면
+  # - 다음 terraform apply 시 다시 REPLACE_ME로 덮어쓰는 것을 방지
+  #
+  # 단, DB 정보(호스트, 비밀번호 등)가 변경되면?
+  # - RDS 재생성 시에만 변경됨 (드문 경우)
+  # - 필요시 taint 명령으로 강제 재생성
+  #   terraform taint aws_secretsmanager_secret_version.app_db_credentials
+  #
   lifecycle {
     ignore_changes = [secret_string]
   }
+
+  # ---------------------------------------------------------------------------
+  # 의존성
+  # ---------------------------------------------------------------------------
+  depends_on = [aws_db_instance.main]
 }
 
 resource "aws_secretsmanager_secret" "cicd" {
