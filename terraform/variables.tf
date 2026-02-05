@@ -3,7 +3,7 @@
 variable "project_name" {
   description = "프로젝트 이름 (리소스 이름 prefix로 사용)"
   type        = string
-  default     = "eks-gitops-provisioning"
+  default     = "exchange-settlement"
 
   validation {
     condition     = can(regex("^[a-z0-9-]+$", var.project_name))

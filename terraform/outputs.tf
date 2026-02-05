@@ -71,8 +71,8 @@ output "ecr_login_command" {
 }
 
 
-# Dev: dev.playdevops.xyz
-# Prod: playdevops.xyz
+# Dev: dev.playbuilder.xyz
+# Prod: playbuilder.xyz
 output "app_domain" {
   description = "Application Domain"
   value       = var.environment == "prod" ? var.domain_name : "${var.environment}.${var.domain_name}"

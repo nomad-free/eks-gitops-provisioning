@@ -5,7 +5,7 @@ metadata:
 spec:
   rules:
     # 1. 메인 도메인
-    - host: dev.playdevops.xyz
+    - host: dev.playbuilder.xyz
       http:
         paths:
           - path: /
@@ -23,7 +23,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: app-svc # 원래는 custody-svc 
+                name: app-svc # 원래는 custody-svc
                 port:
                   number: 80
     # 3. [추가] Datalab 서브도메인
