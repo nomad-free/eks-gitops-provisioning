@@ -1,0 +1,115 @@
+name: Deploy to Dev
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches:
+      - develop
+# permissions: OIDC 인증에 필요한 권한
+permissions:
+  id-token: write # OIDC 토큰 발급
+  contents: read # 코드 읽기
+  packages: write # 패키지 쓰기 (ECR)
+# env: 환경변수 (GitHub Variables에서 가져옴)
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  ENVIRONMENT: dev
+
+jobs:
+  build-and-deploy:
+    name: 🏗️ Build & Deploy (Dev)
+    runs-on: ubuntu-latest
+    environment: dev # ⭐ GitHub Environment 사용 (Secret 분리)
+    if: ${{ github.event.workflow_run.conclusion == 'success' }} # CI가 "성공"했을 때만 실행
+
+    steps:
+      # Step 1: 코드 체크아웃
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      # Step 2: AWS 인증 (OIDC)
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: gha-dev-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+      # Step 3: ECR 로그인
+      - name: 🔐 Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      # Step 4: Docker Buildx 설정
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      # Step 5: Docker 이미지 빌드 & ECR Push
+      - name: 🐳 Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest-dev
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Step 6: kubectl 설정
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "latest"
+
+      - name: 🔗 Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+      - name: 🚀 Deploy to Dev
+        run: |
+          cd kustomize/overlays/dev
+
+          # 이미지 태그 업데이트
+          kustomize edit set image \
+            app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest-dev
+
+          # 배포 (SA는 이미 Terraform에서 생성됨)
+          kubectl apply -k .
+
+          # 롤아웃 대기
+          kubectl rollout status deployment/app -n app-dev --timeout=180s
+      - name: 🏥 Run health check
+        run: |
+          kubectl port-forward svc/app-svc 8080:80 -n app-dev &
+          PF_PID=$!
+          sleep 10
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            http://localhost:8080/api/v1/health || echo "000")
+          kill $PF_PID 2>/dev/null || true
+          if [ "$HTTP_STATUS" == "200" ]; then
+            echo "✅ Health check passed!"
+          else
+            echo "❌ Health check failed! (HTTP: $HTTP_STATUS)"
+            exit 1
+          fi
+
+      - name: 📢 Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Dev Deploy: ${{ job.status }}",
+              "blocks": [
+                 {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Dev Deploy Finished* :${{ job.status == 'success' && 'white_check_mark' || 'x' }}:\nBranch: `develop`"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

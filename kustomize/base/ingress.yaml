@@ -1,0 +1,27 @@
+# - 외부 트래픽을 서비스로 라우팅합니다.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  labels:
+    app.kubernetes.io/name: app
+  annotations:
+    # [2025 Refactor] AWS LB Controller v3 호환 어노테이션
+    # SSL 리다이렉트는 ALB/NLB 레벨에서 처리되지만, NGINX 사용 시 명시
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # [권장] 헬스체크 경로 명시
+    nginx.ingress.kubernetes.io/health-check-path: "/api/v1/health"
+spec:
+  ingressClassName: nginx # IngressClass 명시 필수
+
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-svc
+                port:
+                  number: 80

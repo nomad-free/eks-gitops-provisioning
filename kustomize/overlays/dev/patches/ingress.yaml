@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+spec:
+  rules:
+    # 1. 메인 도메인
+    - host: dev.playdevops.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-svc
+                port:
+                  number: 80
+    # 2. [추가] Custody 서브도메인
+    - host: custody.playbuilder.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-svc # 원래는 custody-svc 
+                port:
+                  number: 80
+    # 3. [추가] Datalab 서브도메인
+    - host: datalab.playbuilder.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-svc # 원래는 datalab-svc
+                port:
+                  number: 80

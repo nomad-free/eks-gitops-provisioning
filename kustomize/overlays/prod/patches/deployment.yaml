@@ -1,0 +1,32 @@
+# - 운영 환경 전용 리소스 할당 및 스케줄링 정책 적용
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: app
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: LOG_LEVEL
+              value: "warn" # 운영은 로그 양을 줄임
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+      # - 토폴로지 분산 제약 조건 (Topology Spread Constraints)
+      # - 파드를 여러 AZ(가용 영역)에 골고루 분산시켜 AZ 장애에 대비함
+      topologySpreadConstraints:
+        - maxSkew: 1 # maxSkew: AZ 간 Pod 수 차이 최대값 - # 1 = AZ-a에 2개, AZ-b에 1개까지 허용 (차이 1)
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule # DoNotSchedule: 조건 불만족 시 스케줄링 거부
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: app

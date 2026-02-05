@@ -1,0 +1,56 @@
+# - Pod 간 네트워크 트래픽 제어
+# 왜 필요한가?
+# - 해커가 한 Pod 침투 시 다른 Pod로 이동(Lateral Movement) 방지
+# - 최소 권한 원칙 적용
+# - 컴플라이언스 요구사항 충족
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+  name: app-network-policy
+spec:
+  # podSelector: 이 정책이 적용될 Pod
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Ingress Controller에서 오는 트래픽만 허용
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # ingress-nginx namespace에서만 접근 가능
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000   # 앱 포트
+
+  # ---------------------------------------------------------------------------
+  # egress: 나가는 트래픽 허용 규칙
+  # ---------------------------------------------------------------------------
+  egress:
+    # 1. DNS 허용 (서비스 이름 → IP 변환에 필수)
+    - to:
+        - namespaceSelector: {}  # 모든 namespace
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # 2. 외부 HTTPS 허용 (API 호출용)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0  # 모든 외부 IP
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # 3. PostgreSQL 허용 (RDS 연결용)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 5432

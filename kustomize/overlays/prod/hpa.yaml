@@ -1,0 +1,43 @@
+# - autoscaling/v2 API 사용 (v1, v2beta1 완전 제거됨)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  # [권장] 스케일링 동작 미세 조정 (Flapping 방지)
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300 # 축소 전 5분 대기
+      policies:
+        # 60초마다 최대 10%씩 축소
+        # 갑작스러운 축소로 인한 서비스 영향 방지
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0 # 확장은 즉시 수행
+      policies:
+        # 15초마다 최대 100% 확장 가능
+        # 예: 2개 → 4개 → 8개 (빠른 확장)
+        - type: Percent
+          value: 100
+          periodSeconds: 15

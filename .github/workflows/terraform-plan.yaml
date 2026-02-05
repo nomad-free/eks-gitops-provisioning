@@ -1,0 +1,81 @@
+# 📋  PR 시 Terraform Plan
+# - 인프라 변경 PR 생성 시 자동으로 Plan 실행
+# - Plan 결과를 PR 코멘트로 표시
+# - 리뷰어가 변경 사항을 쉽게 확인 가능
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "terraform/**"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write # PR에 코멘트 작성용
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: "1.10.0"
+
+jobs:
+  plan:
+    name: 📋 Terraform Plan
+    runs-on: ubuntu-latest
+
+    # matrix.environment 값에 따라 dev 또는 prod Environment 사용
+    # 각 Environment에서 AWS_ROLE_ARN Secret 가져옴
+    environment: ${{ matrix.environment }}
+
+    strategy:
+      matrix:
+        environment: [dev] # 필요시 [dev, prod]로 확장 가능
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: terraform-plan-${{ matrix.environment }}-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: |
+          terraform init -backend-config=backends/${{ matrix.environment }}.hcl
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: terraform
+        run: |
+          terraform plan -var-file=${{ matrix.environment }}.tfvars -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `#### Terraform Plan 📋
+            **Environment:** \`${{ matrix.environment }}\`
+            **Result:** ${{ steps.plan.outcome }}
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+
+            </details>`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })

@@ -1,0 +1,25 @@
+# - Base(기본) 리소스 목록 정의
+# - 모든 환경에서 공통으로 사용되는 설정
+# - Overlays(dev, prod)에서 이 base를 참조
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: exchange-settlement-base
+# 순서 중요!
+# 의존성 있는 리소스는 먼저 정의 (Namespace → 나머지)
+resources:
+  - secretstore.yaml # External Secrets가 AWS 연결하는 설정
+  - externalsecret.yaml # SecretStore 필요 
+  - deployment.yaml # ServiceAccount, Secret 참조 
+  - service.yaml # Deployment 참조
+  - ingress.yaml # 독립적     
+  - networkpolicy.yaml   # 네트워크 보안 정책
+commonLabels:
+  # part-of: 이 리소스가 속한 상위 애플리케이션
+  app.kubernetes.io/part-of: exchange-settlement
+  app.kubernetes.io/managed-by: kustomize
+images:
+  - name: app # deployment.yaml의 image와 매칭
+    newName: app # 실제 이미지 이름 (overlays에서 ECR URL로 변경)
+    newTag: latest # 태그 (overlays에서 latest-dev, latest-prod로 변경)

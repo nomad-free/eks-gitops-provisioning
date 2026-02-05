@@ -1,0 +1,22 @@
+# "Dev 환경 설정 - Base를 참조하고 Dev 전용 패치 적용"
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: exchange-settlement-dev
+namespace: app-dev
+resources:
+  - ../../base
+  - hpa.yaml # Dev 전용 HPA (오토스케일링)
+commonLabels:
+  environment: dev
+patches:
+  - path: patches/deployment.yaml # replicas, resources, env 수정
+  - path: patches/ingress.yaml # host 추가 (dev.playbuilder.xyz)
+  - path: patches/externalsecret.yaml # 시크릿 경로 (k8s-ci-cd/dev/...)
+images:
+  - name: app
+    newName: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/exchange-settlement-app
+    newTag: latest-dev
+
+# ACCOUNT_ID는 GitHub Actions에서 동적으로 교체:
+# kustomize edit set image app={ECR_URL}:latest-dev

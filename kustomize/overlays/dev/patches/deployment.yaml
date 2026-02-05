@@ -1,0 +1,23 @@
+# - 지정한 필드만 덮어쓰고 나머지는 Base 유지
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: app
+          env:
+            - name: NODE_ENV
+              value: "development"
+            - name: LOG_LEVEL
+              value: "debug" # 디버깅을 위해 로그 자세히
+          resources:
+            requests:
+              cpu: "50m" # 0.05 CPU 코어
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi" # OOM 방지를 위한 최소한의 한계

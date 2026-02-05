@@ -1,0 +1,195 @@
+# =============================================================================
+# Deployment - 애플리케이션 파드(Pod)를 관리하고 배포하는 핵심 리소스
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  labels:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5 # 롤백을 위해 최근 5개 버전 유지
+
+  # 무중단 배포 전략 (Rolling Update)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0 # 배포 중에도 서비스 중단 없음
+      maxSurge: 1 # 배포 중에 파드 1개를 더 띄움
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app
+        app.kubernetes.io/component: backend
+
+    spec:
+      serviceAccountName: app-sa
+      automountServiceAccountToken: true
+
+      # Pod Security Standards 'Restricted' 준수
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        # 내가 일일이 금지 목록을 만들기 귀찮으니, **컨테이너 런타임(Docker, containerd 등)이 미리 정의해 둔 '표준 보안 프로필'**을 쓰겠다"는 뜻
+        # 이 설정을 켜면 reboot(재부팅), swapoff(스왑 끄기), sysctl(커널 파라미터 변경) 등 일반적인 애플리케이션에는 필요 없지만 공격자에게는 유용한 위험한 시스템 콜이 자동으로 차단
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: app
+          # "app:latest"는 kustomization.yaml의 images에서 치환됨
+          # 최종: {ECR_URL}/exchange-settlement-app:latest-dev
+          image: app:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 3000
+
+          # =================================================================
+          # 🔐 환경변수 설정
+          # AWS Secrets Manager → ExternalSecret → K8s Secret → 여기로 주입
+          # =================================================================
+          env:
+            # 기본 설정
+            - name: PORT
+              value: "3000"
+            - name: NODE_ENV
+              value: "production"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            # -----------------------------------------------------------------
+            # 📦 데이터베이스 설정 (AWS Secrets Manager에서 주입)
+            # -----------------------------------------------------------------
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets # K8s Secret 이름
+                  key: DB_HOST # Secret 내의 키
+                  optional: true # 시크릿 없어도 Pod 시작 가능
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: DB_PORT
+                  optional: true
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: DB_NAME
+                  optional: true
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: DB_USER
+                  optional: true
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: DB_PASSWORD
+                  optional: true
+
+            # -----------------------------------------------------------------
+            # 🔑 외부 API 키 (AWS Secrets Manager에서 주입)
+            # -----------------------------------------------------------------
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: API_KEY
+                  optional: true
+            - name: API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: API_SECRET
+                  optional: true
+
+            # -----------------------------------------------------------------
+            # 🔐 보안 토큰 (AWS Secrets Manager에서 주입)
+            # -----------------------------------------------------------------
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: JWT_SECRET
+                  optional: true
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: ENCRYPTION_KEY
+                  optional: true
+
+          # 리소스 제한
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          # Startup Probe (앱 초기화 시간 확보)
+          # 최대 대기: 30번 * 10초 = 300초 (5분)
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
+
+          # Liveness Probe (앱이 살아있는지)
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          # Readiness Probe (트래픽 받을 준비 됐는지)
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+          # 컨테이너 보안 설정
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+            allowPrivilegeEscalation: false # 권한 상승 금지
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"] # 모든 Linux capability 제거
+
+          # 읽기 전용 파일시스템이므로 /tmp 쓰기 권한 부여
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi
+      # Pod 종료 시 30초 동안 graceful shutdown 대기
+      # - 진행 중인 요청 완료
+      # - DB 연결 정리
+      # - 로그 플러시
+      terminationGracePeriodSeconds: 30
