@@ -45,20 +45,28 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
+  # ---------------------------------------------------------------------------
+  # 클러스터 접근 제어
+  # ---------------------------------------------------------------------------
   cluster_endpoint_public_access       = true
-  cluster_endpoint_public_access_cidrs = var.allowed_cidrs # 방법 1: VPN/사무실 IP + GitHub Actions NAT IP로 제한 (권장)
+  cluster_endpoint_public_access_cidrs = var.allowed_cidrs
+  cluster_endpoint_private_access      = true
 
-  cluster_endpoint_private_access = true
-
-  # 1. 생성자에게 자동 권한 부여 기능 끄기 (보안 강화 & 명시적 관리)
+  # 생성자에게 자동 admin 권한 부여 끄기 (보안 강화)
   enable_cluster_creator_admin_permissions = false
 
-  # 2. 클러스터 접근 방식 설정 (API 방식 권장)
+  # Access Entry 방식 사용 (최신 방식)
   authentication_mode = "API_AND_CONFIG_MAP"
 
+  # ===========================================================================
+  # 🔑 Access Entries (IAM Role -> K8s 권한 매핑)
+  # ===========================================================================
   access_entries = {
+    # 1. 마스터 관리자 (콘솔용 사용자)
     master_admin = {
       principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/Master-Admin"
+
+      # 관리자는 별도 user_name 지정 불필요 (기본값 사용)
       policy_associations = {
         admin = {
           policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
@@ -67,11 +75,18 @@ module "eks" {
           }
         }
       }
-    },
+    }
 
+    # 2. CI/CD Runner (GitHub Actions)
     ci_cd_runner = {
       principal_arn = aws_iam_role.github_actions.arn
+
+      # ⭐⭐⭐ 핵심 변경: Kubernetes 내부 Username 고정 ⭐⭐⭐
+      # 이 설정 덕분에 rbac.tf에서 복잡한 ARN 대신 "ci-cd-runner"라는 이름만 쓰면 됩니다.
+      user_name = "ci-cd-runner"
+
       policy_associations = {
+        # (1) 기본 리소스(Deployment, Service 등) 권한
         deploy = {
           policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
           access_scope = {
@@ -79,42 +94,32 @@ module "eks" {
             namespaces = ["app-dev", "app-prod"]
           }
         }
+        # (2) CRD 권한은 여기서 줄 수 없으므로, rbac.tf에서 "ci-cd-runner" 이름으로 부여함
       }
     }
   }
 
-
-  # KMS 키 관리자 (Secret 암호화용 키 권한)
+  # ---------------------------------------------------------------------------
+  # KMS 키 관리자 (Secret 암호화용)
+  # ---------------------------------------------------------------------------
   kms_key_administrators = [
-    # 1. 현재 이 Terraform을 실행하는 사람
     data.aws_caller_identity.current.arn,
-
-    # 2. GitHub Actions Role (자동 연동)
-    # github-oidc.tf에서 생성된 Role이 키 관리 권한도 갖도록 설정
     aws_iam_role.github_actions.arn
   ]
 
+  # ---------------------------------------------------------------------------
+  # EKS Addons
+  # ---------------------------------------------------------------------------
   cluster_addons = {
-    # 역할: Pod끼리 이름으로 통신 (service-name.namespace → IP)
-    # 예: app.app-dev.svc.cluster.local → 10.0.1.123
     coredns = {
       most_recent = true
     }
-
-    # 역할: Service의 트래픽을 Pod으로 라우팅
-    # 예: ClusterIP Service → 실제 Pod IP로 전달
     kube-proxy = {
       most_recent = true
     }
-    # 역할: Pod에 VPC IP 직접 할당
-    # 장점: Pod이 VPC 내 다른 리소스(RDS 등)와 직접 통신 가능
-    #
-    # ENABLE_PREFIX_DELEGATION: IP 주소 효율성 향상
-    # 기존: 노드당 최대 ~30개 Pod
-    # 활성화: 노드당 최대 ~110개 Pod (t3.medium 기준)
     vpc-cni = {
       most_recent    = true
-      before_compute = true # 노드 생성 전에 CNI 먼저 설정
+      before_compute = true
       configuration_values = jsonencode({
         env = {
           ENABLE_PREFIX_DELEGATION = "true"
@@ -122,17 +127,19 @@ module "eks" {
         }
       })
     }
-    # 역할: PersistentVolume으로 EBS 사용
-    # 예: 데이터베이스 Pod에 영구 스토리지 연결
     aws-ebs-csi-driver = {
       most_recent              = true
       service_account_role_arn = module.ebs_csi_irsa_role.iam_role_arn
     }
   }
 
+  # ---------------------------------------------------------------------------
+  # Node Groups
+  # ---------------------------------------------------------------------------
   eks_managed_node_group_defaults = {
     ami_type = "AL2023_x86_64_STANDARD"
   }
+
   eks_managed_node_groups = {
     main = {
       name           = "main"
@@ -155,8 +162,7 @@ module "eks" {
   }
 
   enable_irsa = true
-
-  tags = local.common_tags
+  tags        = local.common_tags
 }
 
 # 3. [추가됨] EBS CSI Driver를 위한 IRSA Role
