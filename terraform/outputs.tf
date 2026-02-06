@@ -51,6 +51,7 @@ output "github_actions_role_arn" {
 output "app_secrets_arn" {
   description = "App Secrets ARN"
   value       = aws_secretsmanager_secret.app.arn
+  sensitive   = true
 }
 
 output "external_secrets_role_arn" {

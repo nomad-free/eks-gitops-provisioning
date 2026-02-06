@@ -7,6 +7,9 @@ on:
       - completed
     branches:
       - develop
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 # permissions: OIDC 인증에 필요한 권한
 permissions:
   id-token: write # OIDC 토큰 발급
@@ -29,7 +32,7 @@ jobs:
     steps:
       # Step 1: 코드 체크아웃
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       # Step 2: AWS 인증 (OIDC)
       - name: 🔐 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -46,10 +49,14 @@ jobs:
         uses: docker/setup-buildx-action@v3
       # Step 5: Docker 이미지 빌드 & ECR Push
       - name: 🐳 Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v5
         with:
           context: ./app
           push: true
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            GIT_SHA=${{ github.sha }}
+            VERSION=${{ steps.meta.outputs.version }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest-dev
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:dev-${{ github.sha }}
@@ -79,20 +86,28 @@ jobs:
 
           # 롤아웃 대기
           kubectl rollout status deployment/app -n app-dev --timeout=180s
+
       - name: 🏥 Run health check
         run: |
           kubectl port-forward svc/app-svc 8080:80 -n app-dev &
           PF_PID=$!
-          sleep 10
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            http://localhost:8080/api/v1/health || echo "000")
+
+          MAX_RETRIES=15
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              http://localhost:8080/api/v1/health 2>/dev/null || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Health check passed! (attempt $i)"
+              kill $PF_PID 2>/dev/null || true
+              exit 0
+            fi
+            echo "⏳ Attempt $i/$MAX_RETRIES - HTTP $HTTP_STATUS"
+            sleep 5
+          done
+
           kill $PF_PID 2>/dev/null || true
-          if [ "$HTTP_STATUS" == "200" ]; then
-            echo "✅ Health check passed!"
-          else
-            echo "❌ Health check failed! (HTTP: $HTTP_STATUS)"
-            exit 1
-          fi
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          exit 1
 
       - name: ⏪ Rollback on failure
         if: failure()

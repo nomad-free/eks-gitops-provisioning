@@ -1,15 +1,5 @@
 
 
-variable "project_name" {
-  description = "프로젝트 이름 (리소스 이름 prefix로 사용)"
-  type        = string
-  default     = "exchange-settlement"
-
-  validation {
-    condition     = can(regex("^[a-z0-9-]+$", var.project_name))
-    error_message = "프로젝트 이름은 소문자, 숫자, 하이픈만 허용됩니다."
-  }
-}
 
 variable "environment" {
   description = "Deployment environment (dev or prod)"
@@ -42,6 +32,12 @@ variable "eks_cluster_version" {
   description = "EKS Kubernetes version"
   type        = string
   default     = "1.34"
+}
+
+variable "allowed_cidrs" {
+  description = "EKS API 서버 접근 허용 CIDR 목록"
+  type        = list(string)
+  # default 없이 tfvars에서 환경별로 명시 주입
 }
 
 locals {

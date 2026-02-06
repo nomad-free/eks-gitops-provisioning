@@ -46,7 +46,7 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   cluster_endpoint_public_access       = true
-  cluster_endpoint_public_access_cidrs = ["0.0.0.0"] # 사내 VPN 또는 <GitHub Actions NAT IP>/32" 변
+  cluster_endpoint_public_access_cidrs = var.allowed_cidrs # 방법 1: VPN/사무실 IP + GitHub Actions NAT IP로 제한 (권장)
 
   cluster_endpoint_private_access = true
 

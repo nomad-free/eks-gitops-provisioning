@@ -50,7 +50,7 @@ spec:
     # 3. PostgreSQL 허용 (RDS 연결용)
     - to:
         - ipBlock:
-            cidr: 0.0.0.0/0 # dev VPC CIDR (또는 10.1.0.0/16 for prod)
+            cidr: 0.0.0.0/0  # 내부 VPC CIDR 범위만 for prod
       ports:
         - protocol: TCP
           port: 5432

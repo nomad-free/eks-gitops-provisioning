@@ -1,5 +1,15 @@
 # "AWS Secrets Manager 시크릿 생성 + External Secrets Operator 설치 + IRSA 설정"
 
+resource "random_password" "jwt_secret" {
+  length  = 64
+  special = true
+}
+
+resource "random_password" "api_key" {
+  length  = 32
+  special = false
+}
+
 # 실수로 삭제해도 30일 내 복구 가능
 # 0으로 설정하면 즉시 삭제 (위험!)
 resource "aws_secretsmanager_secret" "app" {
@@ -58,8 +68,12 @@ resource "aws_secretsmanager_secret_version" "app_db_credentials" {
     # API_SECRET: API 요청 서명용 (선택적)
     # - HMAC 서명 등에 사용
     #
-    API_KEY    = "REPLACE_ME_WITH_ACTUAL_API_KEY"
-    API_SECRET = "REPLACE_ME_WITH_ACTUAL_API_SECRET"
+
+
+    # secret_string 내에서:
+    JWT_SECRET = random_password.jwt_secret.result
+    API_KEY    = random_password.api_key.result
+
 
     # =========================================================================
     # 🔐 보안 토큰 (수동 입력 필요)
@@ -142,7 +156,9 @@ resource "helm_release" "external_secrets" {
     serviceAccount = {
       create = true
       name   = "external-secrets"
-
+      annotations = {
+        "eks.amazonaws.com/role-arn" = module.external_secrets_irsa.iam_role_arn
+      }
     }
   })]
   depends_on = [time_sleep.wait_for_eks, module.external_secrets_irsa]

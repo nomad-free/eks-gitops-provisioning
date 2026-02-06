@@ -30,6 +30,11 @@ spec:
         app.kubernetes.io/component: backend
 
     spec:
+      # Pod 종료 시 30초 동안 graceful shutdown 대기
+      # - 진행 중인 요청 완료
+      # - DB 연결 정리
+      # - 로그 플러시
+      terminationGracePeriodSeconds: 60
       serviceAccountName: app-sa
       automountServiceAccountToken: false
 
@@ -161,7 +166,7 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
-
+            failureThreshold: 3
           # Readiness Probe (트래픽 받을 준비 됐는지)
           readinessProbe:
             httpGet:
@@ -169,6 +174,7 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+            failureThreshold: 3
 
           # 컨테이너 보안 설정
           securityContext:
@@ -188,8 +194,3 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 100Mi
-      # Pod 종료 시 30초 동안 graceful shutdown 대기
-      # - 진행 중인 요청 완료
-      # - DB 연결 정리
-      # - 로그 플러시
-      terminationGracePeriodSeconds: 30

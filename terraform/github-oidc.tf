@@ -121,15 +121,7 @@ resource "aws_iam_role_policy" "terraform_access" {
         Effect = "Allow"
         Action = [
           "eks:DescribeCluster",
-          "eks:AccessKubernetesApi",
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:PutImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload"
+          "eks:AccessKubernetesApi"
         ]
         Resource = "*"
       },
