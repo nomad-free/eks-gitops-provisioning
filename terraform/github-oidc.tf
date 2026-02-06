@@ -182,3 +182,41 @@ resource "aws_iam_role_policy" "terraform_access" {
     ]
   })
 }
+
+resource "aws_iam_role_policy" "tf_backend_access" {
+  name = "terraform-backend-access"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # (1) S3 버킷 목록 조회 및 위치 확인 (Dev & Prod)
+      {
+        Sid    = "S3BucketAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          "arn:aws:s3:::plydevops-infra-tf-dev", # Dev 버킷
+          "arn:aws:s3:::plydevops-infra-tf-prod" # Prod 버킷 (추가됨)
+        ]
+      },
+      # (2) S3 객체 읽기/쓰기 (Dev & Prod)
+      {
+        Sid    = "S3ObjectAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::plydevops-infra-tf-dev/*", # Dev 내용물
+          "arn:aws:s3:::plydevops-infra-tf-prod/*" # Prod 내용물 (추가됨)
+        ]
+      }
+    ]
+  })
+}
