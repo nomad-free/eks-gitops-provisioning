@@ -30,8 +30,7 @@ jobs:
 
     strategy:
       matrix:
-        environment: [dev] # 필요시 [dev, prod]로 확장 가능
-
+        environment: [dev, prod]
     steps:
       - uses: actions/checkout@v4
 

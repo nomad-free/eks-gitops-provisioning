@@ -1,9 +1,7 @@
-# [github-oidc.tf]
-# GitHub Actions를 위한 IAM Role 및 정책 정의
-
-# 1. GitHub OIDC Provider 생성
+# ─── OIDC Provider ───
+# 계정당 1개만 존재 가능 → dev에서만 생성
 resource "aws_iam_openid_connect_provider" "github" {
-  count = var.environment == "dev" ? 1 : 0 # dev 환경에서만 생성 (필요시 조건 수정)
+  count = var.environment == "dev" ? 1 : 0
 
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
@@ -12,6 +10,21 @@ resource "aws_iam_openid_connect_provider" "github" {
     "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
   ]
   tags = local.common_tags
+}
+
+# prod에서는 dev가 만든 OIDC Provider를 data source로 참조
+data "aws_iam_openid_connect_provider" "github" {
+  count = var.environment == "prod" ? 1 : 0
+  url   = "https://token.actions.githubusercontent.com"
+}
+
+# ─── 환경에 따라 올바른 ARN을 선택하는 local ───
+locals {
+  github_oidc_provider_arn = (
+    var.environment == "dev"
+    ? aws_iam_openid_connect_provider.github[0].arn
+    : data.aws_iam_openid_connect_provider.github[0].arn
+  )
 }
 
 # 2. IAM Role 생성 (GitHub Actions가 사용할 가면)
@@ -24,7 +37,7 @@ resource "aws_iam_role" "github_actions" {
       {
         Effect = "Allow"
         Principal = {
-          Federated = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+          Federated = local.github_oidc_provider_arn
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
@@ -107,9 +120,16 @@ resource "aws_iam_role_policy" "terraform_access" {
         Sid    = "InfrastructureAccess"
         Effect = "Allow"
         Action = [
-          "ec2:*", "eks:*", "secretsmanager:*",
-          "s3:*", "logs:*", "kms:*", "autoscaling:*",
-          "elasticloadbalancing:*", "sts:GetCallerIdentity", "ecr:*"
+          "eks:DescribeCluster",
+          "eks:AccessKubernetesApi",
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload"
         ]
         Resource = "*"
       },

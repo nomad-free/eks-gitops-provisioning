@@ -70,7 +70,7 @@ locals {
       capacity_type  = "SPOT"
     }
     prod = {
-      instance_types = ["t3.large"]
+      instance_types = ["t3.large", "t3a.large", "m5.large"]
       desired_size   = 2
       min_size       = 2
       max_size       = 5

@@ -45,7 +45,9 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  cluster_endpoint_public_access  = true
+  cluster_endpoint_public_access       = true
+  cluster_endpoint_public_access_cidrs = ["0.0.0.0"] # 사내 VPN 또는 <GitHub Actions NAT IP>/32" 변
+
   cluster_endpoint_private_access = true
 
   # 1. 생성자에게 자동 권한 부여 기능 끄기 (보안 강화 & 명시적 관리)
@@ -67,15 +69,15 @@ module "eks" {
       }
     },
 
-    # CI/CD 파이프라인을 위한 권한 (배포용)
-    # -> github-oidc.tf 에서 만든 Role을 여기서 참조합니다.
     ci_cd_runner = {
       principal_arn = aws_iam_role.github_actions.arn
-
       policy_associations = {
-        admin = {
-          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = { type = "cluster" }
+        deploy = {
+          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
+          access_scope = {
+            type       = "namespace"
+            namespaces = ["app-dev", "app-prod"]
+          }
         }
       }
     }
@@ -133,7 +135,7 @@ module "eks" {
   }
   eks_managed_node_groups = {
     main = {
-      name           = "${local.cluster_name}-node"
+      name           = "main"
       instance_types = local.node_config[var.environment].instance_types
       capacity_type  = local.node_config[var.environment].capacity_type
 
@@ -161,7 +163,7 @@ module "eks" {
 # (cluster_addons에서 참조 중이므로 이 블록이 꼭 필요합니다)
 module "ebs_csi_irsa_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.0"
+  version = "5.50.0"
 
   role_name             = "ebs-csi-${local.cluster_name}"
   attach_ebs_csi_policy = true
@@ -180,7 +182,7 @@ resource "aws_ecr_repository" "app" {
 
   # MUTABLE: 같은 태그로 덮어쓰기 가능 (예: latest)
   # IMMUTABLE: 한번 푸시한 태그는 변경 불가 (프로덕션 권장)
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = var.environment == "prod" ? "IMMUTABLE" : "MUTABLE"
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -238,8 +240,7 @@ module "app_irsa" {
       provider_arn = module.eks.oidc_provider_arn
       # Dev와 Prod 모두에서 사용 가능
       namespace_service_accounts = [
-        "app-dev:app-sa", # Dev 환경 ServiceAccount
-        "app-prod:app-sa" # Prod 환경 ServiceAccount
+        "app-${var.environment}:app-sa"
       ]
     }
   }
