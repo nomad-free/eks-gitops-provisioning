@@ -6,13 +6,13 @@ metadata:
   labels:
     app.kubernetes.io/name: app
 spec:
-  type: ClusterIP    
-  
+  type: ClusterIP
+
   selector:
     app.kubernetes.io/name: app
-  
+
   ports:
     - name: http
-      port: 80           # (Service 포트)
-      targetPort: 3000  # 파드 내부 컨테이너 포트 (Node.js 앱 포트)
+      port: 80 # (Service 포트)
+      targetPort: 3000 # 파드 내부 컨테이너 포트
       protocol: TCP
