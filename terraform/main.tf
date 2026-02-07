@@ -91,7 +91,8 @@ module "eks" {
           policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
           access_scope = {
             type       = "namespace"
-            namespaces = ["app-dev", "app-prod"]
+            namespaces = ["app-${var.environment}"]
+
           }
         }
         # (2) CRD 권한은 여기서 줄 수 없으므로, rbac.tf에서 "ci-cd-runner" 이름으로 부여함
@@ -183,40 +184,7 @@ module "ebs_csi_irsa_role" {
   tags = local.common_tags
 }
 
-resource "aws_ecr_repository" "app" {
-  name = "${local.project_name}-app"
 
-  # MUTABLE: 같은 태그로 덮어쓰기 가능 (예: latest)
-  # IMMUTABLE: 한번 푸시한 태그는 변경 불가 (프로덕션 권장)
-  image_tag_mutability = var.environment == "prod" ? "IMMUTABLE" : "MUTABLE"
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-  encryption_configuration {
-    encryption_type = "AES256"
-  }
-  tags = local.common_tags
-}
-
-resource "aws_ecr_lifecycle_policy" "app" {
-  repository = aws_ecr_repository.app.name
-  policy = jsonencode({
-    rules = [
-      {
-        rulePriority = 1
-        description  = "최근 30개 이미지만 유지"
-        selection = {
-          tagStatus   = "any"
-          countType   = "imageCountMoreThan"
-          countNumber = 30
-        }
-        action = {
-          type = "expire"
-        }
-      }
-    ]
-  })
-}
 
 # EKS 클러스터가 완전히 준비될 때까지 대기
 resource "time_sleep" "wait_for_eks" {

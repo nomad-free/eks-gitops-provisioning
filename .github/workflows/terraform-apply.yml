@@ -33,6 +33,44 @@ env:
   TF_VERSION: "1.10.0"
 
 jobs:
+  # 🆕 Global Layer (OIDC + ECR)
+  global:
+    name: 🌐 Terraform Global Apply
+    runs-on: ubuntu-latest
+    # Global은 dev Environment의 AWS_ROLE_ARN 사용 (또는 별도 global Environment 생성)
+    environment: dev
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: terraform-global-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: 📦 Terraform Init (Global)
+        working-directory: terraform/global
+        run: terraform init -backend-config=backends/global.hcl
+
+      - name: ✅ Terraform Validate (Global)
+        working-directory: terraform/global
+        run: terraform validate
+
+      - name: 📋 Terraform Plan (Global)
+        working-directory: terraform/global
+        run: terraform plan -out=tfplan
+
+      - name: 🚀 Terraform Apply (Global)
+        working-directory: terraform/global
+        run: terraform apply -auto-approve tfplan
   apply:
     name: 🚀 Terraform Apply
     runs-on: ubuntu-latest

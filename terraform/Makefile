@@ -1,17 +1,50 @@
-.PHONY: dev prod
+# =============================================================================
+# Terraform Makefile
+# =============================================================================
+# 적용 순서: global → dev/prod (항상 global 먼저!)
+# =============================================================================
 
-dev:
-	@echo "Switching to DEV..."
-	terraform init -reconfigure -backend-config=backends/dev.hcl
-	terraform plan -var-file=dev.tfvars
+TF = terraform
 
-prod:
-	@echo "Switching to PROD..."
-	terraform init -reconfigure -backend-config=backends/prod.hcl
-	terraform plan -var-file=prod.tfvars
+# ─── Global (환경 독립) ───
+global-init:
+	cd global && $(TF) init -reconfigure -backend-config=backends/global.hcl
 
-deploy-dev:
-	terraform apply -var-file=dev.tfvars -auto-approve
+global-plan:
+	cd global && $(TF) plan
 
-deploy-prod:
-	terraform apply -var-file=prod.tfvars -auto-approve
+global-apply:
+	cd global && $(TF) apply
+
+global-output:
+	cd global && $(TF) output
+
+# ─── Dev ───
+dev-init:
+	$(TF) init -reconfigure -backend-config=backends/dev.hcl
+
+dev-plan:
+	$(TF) plan -var-file=dev.tfvars
+
+dev-apply:
+	$(TF) plan -var-file=dev.tfvars -out=tfplan && $(TF) apply tfplan
+
+dev-output:
+	$(TF) output
+
+# ─── Prod ───
+prod-init:
+	$(TF) init -reconfigure -backend-config=backends/prod.hcl
+
+prod-plan:
+	$(TF) plan -var-file=prod.tfvars
+
+prod-apply:
+	$(TF) plan -var-file=prod.tfvars -out=tfplan && $(TF) apply tfplan
+
+prod-output:
+	$(TF) output
+
+# ─── 전체 적용 (순서 보장) ───
+all-dev: global-init global-apply dev-init dev-apply
+all-prod: global-init global-apply prod-init prod-apply
