@@ -1,31 +1,18 @@
-# ─── OIDC Provider ───
-# 계정당 1개만 존재 가능 → dev에서만 생성
-resource "aws_iam_openid_connect_provider" "github" {
-  count = var.environment == "dev" ? 1 : 0
-
-  url            = "https://token.actions.githubusercontent.com"
-  client_id_list = ["sts.amazonaws.com"]
-  thumbprint_list = [
-    "6938fd4d98bab03faadb97b34396831e3780aea1",
-    "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
-  ]
-  tags = local.common_tags
+data "terraform_remote_state" "global" {
+  backend = "s3"
+  config = {
+    bucket = "exchange-settlement-123456789"
+    key    = "global/terraform.tfstate"
+    region = "us-east-1"
+  }
 }
 
-# prod에서는 dev가 만든 OIDC Provider를 data source로 참조
-data "aws_iam_openid_connect_provider" "github" {
-  count = var.environment == "prod" ? 1 : 0
-  url   = "https://token.actions.githubusercontent.com"
-}
-
-# ─── 환경에 따라 올바른 ARN을 선택하는 local ───
 locals {
-  github_oidc_provider_arn = (
-    var.environment == "dev"
-    ? aws_iam_openid_connect_provider.github[0].arn
-    : data.aws_iam_openid_connect_provider.github[0].arn
-  )
+  github_oidc_provider_arn = data.terraform_remote_state.global.outputs.github_oidc_provider_arn
+  ecr_repository_arn       = data.terraform_remote_state.global.outputs.ecr_repository_arn
 }
+
+
 
 # 2. IAM Role 생성 (GitHub Actions가 사용할 가면)
 resource "aws_iam_role" "github_actions" {
@@ -80,7 +67,7 @@ resource "aws_iam_role_policy" "ecr_access" {
           "ecr:CompleteLayerUpload"
         ]
         # aws_ecr_repository.app 리소스가 정의되어 있어야 합니다.
-        Resource = aws_ecr_repository.app.arn
+        Resource = local.ecr_repository_arn
       }
     ]
   })
@@ -148,13 +135,11 @@ resource "aws_iam_role_policy" "terraform_access" {
           "iam:PutRolePolicy", "iam:DeleteRolePolicy",
           "iam:CreatePolicy", "iam:DeletePolicy",
           "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion",
-          "iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider", "iam:TagOpenIDConnectProvider"
         ]
         Resource = [
           # [여기서 제한!] local.cluster_name 변수 활용
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.cluster_name}-*",
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${local.cluster_name}-*",
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/*"
         ]
       },
 
@@ -178,6 +163,43 @@ resource "aws_iam_role_policy" "terraform_access" {
         Effect   = "Allow"
         Action   = "iam:CreateServiceLinkedRole"
         Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "tf_backend_access" {
+  name = "terraform-backend-access"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # (1) S3 버킷 목록 조회 및 위치 확인 (Dev & Prod)
+      {
+        Sid    = "S3BucketAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          "exchange-settlement-${data.aws_caller_identity.current.account_id}"
+        ]
+      },
+      # (2) S3 객체 읽기/쓰기 (Dev & Prod)
+      {
+        Sid    = "S3ObjectAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::exchange-settlement-${data.aws_caller_identity.current.account_id}${var.environment}/*",
+          "arn:aws:s3:::exchange-settlement-${data.aws_caller_identity.current.account_id}/global/*"
+        ]
       }
     ]
   })

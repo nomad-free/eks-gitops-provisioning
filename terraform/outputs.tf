@@ -39,8 +39,14 @@ output "cluster_arn" {
 }
 
 output "ecr_repository_url" {
-  description = "ECR Repository URL (target for docker push)"
-  value       = aws_ecr_repository.app.repository_url
+  description = "ECR Repository URL (Global State에서 참조)"
+  value       = data.terraform_remote_state.global.outputs.ecr_repository_url
+}
+
+
+output "ecr_login_command" {
+  description = "Command to login to ECR"
+  value       = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${data.terraform_remote_state.global.outputs.ecr_repository_url}"
 }
 
 output "github_actions_role_arn" {
@@ -65,11 +71,6 @@ output "configure_kubectl" {
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
 }
 
-# Docker 이미지 Push 전에 이 명령어로 로그인 필요!
-output "ecr_login_command" {
-  description = "Command to login to ECR"
-  value       = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${aws_ecr_repository.app.repository_url}"
-}
 
 
 # Dev: dev.playbuilder.xyz
