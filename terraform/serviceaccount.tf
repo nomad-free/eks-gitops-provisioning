@@ -56,7 +56,7 @@ resource "kubernetes_namespace_v1" "app_ns" {
 
 
   lifecycle {
-    prevent_destroy = true
+    # prevent_destroy = true
     # Kustomize가 동일 Namespace를 생성하려 할 때 충돌 방지
     ignore_changes = [
       metadata[0].annotations,

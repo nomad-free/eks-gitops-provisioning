@@ -53,7 +53,7 @@ module "eks" {
   cluster_endpoint_private_access      = true
 
   # 생성자에게 자동 admin 권한 부여 끄기 (보안 강화)
-  enable_cluster_creator_admin_permissions = false
+  enable_cluster_creator_admin_permissions = true
 
   # Access Entry 방식 사용 (최신 방식)
   authentication_mode = "API_AND_CONFIG_MAP"
