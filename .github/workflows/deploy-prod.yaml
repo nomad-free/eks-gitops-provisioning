@@ -81,12 +81,11 @@ jobs:
 
       - name: 📤 Commit and push image tag update
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add kustomize/overlays/prod/kustomization.yaml
-
-          if ! git diff --staged --quiet; then
-            git commit -m "chore(prod): update image to ${{ steps.meta.outputs.version }} [skip ci]"
+          if git diff --staged --quiet; then      # ✅ 안전한 패턴
+            echo "No changes to commit"
+          else
+            git commit -m "chore(prod): update image to ..."
             git push
           fi
 

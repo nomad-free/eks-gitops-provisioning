@@ -132,3 +132,8 @@ output "rds_multi_az" {
   description = "Multi-AZ 활성화 여부"
   value       = aws_db_instance.main.multi_az
 }
+
+output "ecr_repository_url" {
+  description = "ECR Repository URL (passed through from global)"
+  value       = var.ecr_repository_url # ✅ 입력받은 변수를 그대로 출력
+}

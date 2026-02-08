@@ -40,6 +40,21 @@ variable "allowed_cidrs" {
   # default 없이 tfvars에서 환경별로 명시 주입
 }
 
+variable "ecr_repository_url" {
+  description = "ECR Repository URL (from global layer)"
+  type        = string
+}
+
+variable "ecr_repository_arn" {
+  description = "ECR Repository ARN (from global layer)"
+  type        = string
+}
+
+variable "github_oidc_provider_arn" {
+  description = "GitHub OIDC Provider ARN (from global layer)"
+  type        = string
+}
+
 locals {
   project_name = "exchange-settlement"
   cluster_name = "${local.project_name}-${var.environment}"

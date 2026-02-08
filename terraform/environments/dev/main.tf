@@ -26,7 +26,7 @@ data "aws_caller_identity" "current" {}
 data "terraform_remote_state" "global" {
   backend = "s3"
   config = {
-    bucket = "exchange-settlement-123456789"
+    bucket = "exchange-settlement-${data.aws_caller_identity.current.account_id}"
     key    = "global/terraform.tfstate"
     region = var.aws_region
   }
@@ -120,6 +120,21 @@ resource "helm_release" "argocd" {
         "controller.status.processors"    = "20"
         "controller.operation.processors" = "10"
       }
+
+      # ✅ Private Repo 접근 설정 (필요 시 주석 해제)
+      # repositories = {
+      #   "eks-gitops-provisioning" = {
+      #     url  = "https://github.com/nomad-free/eks-gitops-provisioning.git"
+      #     type = "git"
+      #   }
+      # }
+      # credentialTemplates = {
+      #   "github-creds" = {
+      #     url      = "https://github.com/nomad-free"
+      #     password = "$${GITHUB_PAT}"  # K8s Secret에서 주입
+      #     username = "git"
+      #   }
+      # }
     }
   })]
 

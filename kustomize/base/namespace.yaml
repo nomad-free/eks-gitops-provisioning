@@ -26,6 +26,6 @@ metadata:
     # restricted: 가장 엄격한 보안 정책
     # enforce: 정책 위반 시 Pod 생성 거부
     pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/enforce-version: v1.34
+    pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted

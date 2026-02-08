@@ -13,6 +13,7 @@ patches:
   - path: patches/deployment.yaml # replicas, resources, env 수정
   - path: patches/ingress.yaml # host 추가 (dev.playbuilder.xyz)
   - path: patches/externalsecret.yaml # 시크릿 경로 (k8s-ci-c/dev/...)
+  - path: patches/networkpolicy.yaml
 images:
   - name: app
     newName: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/exchange-settlement-app

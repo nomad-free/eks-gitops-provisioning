@@ -52,7 +52,7 @@ tmp/
 temp/
 *.bak
 *.tmp
-*.sh
+history.sh
 
 **/.terraform/*
 .terraform/
