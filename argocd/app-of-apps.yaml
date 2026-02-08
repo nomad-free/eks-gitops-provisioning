@@ -1,0 +1,38 @@
+# ============================================
+# 🆕 신규 - argocd/app-of-apps.yaml
+# ============================================
+# "App of Apps" 패턴: 하나의 루트 Application이 다른 Application들을 관리
+#
+# 동작 원리:
+# 1. 이 파일을 수동으로 1회 적용: kubectl apply -f argocd/app-of-apps.yaml
+# 2. ArgoCD가 argocd/apps/ 디렉토리를 감시
+# 3. apps/ 안의 Application CR들이 자동으로 생성/동기화됨
+# 4. 새 앱 추가 = apps/에 YAML 파일 추가 → Git Push → 자동 감지
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-apps
+  namespace: argocd
+  # Finalizer: ArgoCD에서 이 App을 삭제하면 하위 리소스도 삭제
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    # 🔄 실제 GitHub 리포지토리 URL로 변경 필요
+    repoURL: https://github.com/nomad-free/eks-gitops-provisioning.git
+    targetRevision: HEAD
+    path: argocd/apps # 이 디렉토리의 YAML 파일들을 모두 Application으로 생성
+
+  destination:
+    server: https://kubernetes.default.svc # 같은 클러스터
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true # Git에서 삭제되면 클러스터에서도 삭제
+      selfHeal: true # 누군가 kubectl로 변경해도 Git 상태로 복원
+    syncOptions:
+      - CreateNamespace=true

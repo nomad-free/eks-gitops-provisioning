@@ -1,0 +1,31 @@
+# ============================================
+# 🆕 신규 - kustomize/base/namespace.yaml
+# ============================================
+# 원본: terraform/serviceaccount.tf의 kubernetes_namespace_v1.app_ns
+#
+# 왜 Kustomize로 이관했는가?
+# - Namespace는 K8s 논리 리소스 → K8s 도구로 관리하는 것이 자연스러움
+# - Terraform State 문제 시 Namespace까지 영향받는 것을 방지
+# - Kustomize overlay의 namespace: 필드가 metadata.name을 자동 변경
+#
+# 동작 원리:
+# - base에서 name: app으로 정의
+# - overlay에서 namespace: app-dev → metadata.name이 app-dev로 변경됨
+# - overlay에서 namespace: app-prod → metadata.name이 app-prod로 변경됨
+#
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app  # overlay에서 app-dev 또는 app-prod로 변경됨
+  labels:
+    app.kubernetes.io/part-of: exchange-settlement
+    app.kubernetes.io/managed-by: kustomize
+
+    # ─── Pod Security Admission (PSA) ───
+    # Terraform에서 가져온 보안 정책 그대로 유지
+    # restricted: 가장 엄격한 보안 정책
+    # enforce: 정책 위반 시 Pod 생성 거부
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.34
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

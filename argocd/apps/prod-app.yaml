@@ -1,0 +1,46 @@
+# ============================================
+# 🆕 신규 - argocd/apps/prod-app.yaml
+# ============================================
+# Prod는 Dev와 다른 점:
+# 1. targetRevision: main (main 브랜치)
+# 2. automated sync 비활성화 (수동 승인 필요)
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: exchange-settlement-prod
+  namespace: argocd
+  labels:
+    environment: prod
+    app.kubernetes.io/part-of: exchange-settlement
+  annotations:
+    argocd.argoproj.io/sync-wave: "3" # 🆕 ESO + NGINX 이후에 배포
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/nomad-free/eks-gitops-provisioning.git
+    targetRevision: main # 🔑 main 브랜치 감시
+    path: kustomize/overlays/prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app-prod
+
+  syncPolicy:
+    # ⚠️ Prod는 자동 Sync 비활성화!
+    # ArgoCD UI에서 수동으로 "Sync" 버튼을 눌러야 배포됨
+    # 또는 GitHub Actions에서 argocd app sync 명령으로 트리거
+    automated: null
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

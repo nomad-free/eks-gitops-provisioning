@@ -1,0 +1,46 @@
+# ============================================
+# 🆕 신규 - kustomize/base/rbac.yaml
+# ============================================
+# 원본: terraform/rbac.tf
+#
+# 역할: CI/CD Runner가 External Secrets CRD를 관리할 수 있는 권한 부여
+#
+# ⚠️ ArgoCD 완전 전환 후 이 파일은 제거 가능:
+# - ArgoCD가 모든 배포를 담당하면 CI/CD Runner는 kubectl 접근 불필요
+# - 현재는 전환 기간이므로 유지
+#
+# ClusterRole: 클러스터 전체에서 특정 API 리소스에 대한 권한 정의
+# ClusterRoleBinding: 위 권한을 특정 User/SA에 바인딩
+#
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: github-actions-external-secrets
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: exchange-settlement
+rules:
+  # External Secrets CRD에 대한 전체 CRUD 권한
+  - apiGroups: ["external-secrets.io"]
+    resources:
+      - externalsecrets
+      - secretstores
+      - clustersecretstores
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: github-actions-external-secrets
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: github-actions-external-secrets
+subjects:
+  # EKS Access Entry에서 지정한 user_name과 매칭
+  - kind: User
+    name: ci-cd-runner
+    apiGroup: rbac.authorization.k8s.io

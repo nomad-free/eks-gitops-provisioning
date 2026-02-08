@@ -1,0 +1,10 @@
+
+output "cluster_name" { value = module.cluster.cluster_name }
+output "cluster_endpoint" { value = module.cluster.cluster_endpoint }
+output "configure_kubectl" { value = module.cluster.configure_kubectl }
+output "github_actions_role_arn" { value = module.cluster.github_actions_role_arn }
+output "external_secrets_role_arn" { value = module.cluster.external_secrets_role_arn }
+output "ecr_repository_url" { value = module.cluster.ecr_repository_url }
+output "app_domain" { value = module.cluster.app_domain }
+output "rds_endpoint" { value = module.cluster.rds_endpoint }
+output "argocd_url" { value = module.cluster.argocd_url }

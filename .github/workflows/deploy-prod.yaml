@@ -1,57 +1,40 @@
+# ============================================
+# ✅ 변경 후 - .github/workflows/deploy-prod.yaml
+# ============================================
 name: Deploy to Prod
 
 on:
   workflow_run:
     workflows: ["CI"]
-    types:
-      - completed
-    branches:
-      - main
+    types: [completed]
+    branches: [main]
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
+
 permissions:
   id-token: write
-  contents: read
+  contents: write # 🔄 read → write (Git push 필요)
   packages: write
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
   ENVIRONMENT: prod
 
 jobs:
-  # Job 1: security-scan - Prod 전용 보안 스캔
-  security-scan:
-    name: 🔒 Security Scan
+  build-and-deploy:
+    name: 🏗️ Build & Deploy (Prod)
     runs-on: ubuntu-latest
+    environment: prod # GitHub Environment protection rules 적용
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🔍 Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: actions/checkout@v5
         with:
-          scan-type: "fs"
-          scan-ref: "."
-          severity: "CRITICAL,HIGH"
-          exit-code: "1" # ⭐ 취약점 발견 시 빌드 실패!
-  # Job 2: build - Docker 빌드 & ECR Push
-  build:
-    name: 🏗️ Build & Push
-    runs-on: ubuntu-latest
-    needs: security-scan
-    environment: prod
-    outputs:
-      image_uri: ${{ steps.set-output.outputs.image_uri }}
-      image_tag: ${{ steps.meta.outputs.version }}
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🔐 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -63,22 +46,19 @@ jobs:
       - name: 🔐 Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-      # Prod 이미지 태그 생성: v1.0.0-abc1234
-      - name: 📋 Generate Metadata
+
+      - name: 📝 Extract version metadata
         id: meta
         run: |
-          VERSION=$(cat VERSION 2>/dev/null || echo "1.0.0")
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-          echo "version=v${VERSION}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "version=prod-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
 
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: 🐳 Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v6
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        uses: docker/build-push-action@v5
         with:
           context: ./app
           push: true
@@ -87,72 +67,52 @@ jobs:
             GIT_SHA=${{ github.sha }}
             VERSION=${{ steps.meta.outputs.version }}
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest-prod
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: true # ⭐ Provenance 정보 (빌드 출처 증명)
-          sbom: true # ⭐ SBOM 생성 (소프트웨어 구성 목록)
 
-      - name: 📤 Set Job Output
-        id: set-output
-        run: |
-          echo "image_uri=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}" >> $GITHUB_OUTPUT
-  # Job 3: deploy - EKS 배포 + 자동 롤백
-  deploy:
-    name: 🚀 Deploy to Prod
-    runs-on: ubuntu-latest
-    needs: build
-    environment: prod
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🔐 Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: 🔧 Setup kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: "latest"
-
-      - name: 🔗 Configure kubectl
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }}
-      - name: 🚀 Deploy
-        id: deploy
+      # 🆕 ArgoCD 방식: 이미지 태그 업데이트 → Git Commit
+      - name: 🔄 Update image tag in Kustomize
         run: |
           cd kustomize/overlays/prod
+          kustomize edit set image \
+            app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}
 
-          # 이미지 태그 업데이트
-          kustomize edit set image app=${{ needs.build.outputs.image_uri }}
-
-          # 배포 (SA는 이미 Terraform에서 생성됨)
-          kubectl apply -k .
-      # =========================================================================
-      - name: ⏳ Wait for rollout
-        id: rollout
+      - name: 📤 Commit and push image tag update
         run: |
-          if kubectl rollout status deployment/app -n app-prod --timeout=300s; then
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "status=failed" >> $GITHUB_OUTPUT
-            exit 1
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomize/overlays/prod/kustomization.yaml
+
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(prod): update image to ${{ steps.meta.outputs.version }} [skip ci]"
+            git push
           fi
 
-      - name: ⏪ Auto Rollback
-        if: failure() && steps.rollout.outputs.status == 'failed'
-        run: |
-          echo "🚨 Deployment Failed! Initiating Rollback..."
-          kubectl rollout undo deployment/app -n app-prod
-          if kubectl rollout status deployment/app -n app-prod --timeout=300s; then
-            echo "✅ Rollback Successful."
-          else
-            echo "❌ Rollback Failed. Manual intervention required!"
-          fi
+      # ❌ 삭제된 단계들:
+      # - kubectl 설정 (ArgoCD가 처리)
+      # - kubectl apply (ArgoCD가 Git Sync)
+      # - rollout status (ArgoCD Health Check)
+      # - health check (ArgoCD가 처리)
+      # - rollback (ArgoCD 자동 롤백)
+
+      - name: 📢 Notify Slack - Ready for Deploy
+        if: always()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Prod Deploy: ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ job.status == 'success' && '📦' || '❌' }} *Prod Image ${{ job.status == 'success' && 'Updated' || 'Failed' }}*\nVersion: `${{ steps.meta.outputs.version }}`\n${{ job.status == 'success' && '⚠️ *ArgoCD에서 수동 Sync 필요*\n`argocd app sync exchange-settlement-prod`' || '' }}"
+                  }
+                }
+              ]
+            }

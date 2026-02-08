@@ -1,0 +1,50 @@
+# ============================================
+# 🆕 신규 - argocd/apps/dev-app.yaml
+# ============================================
+# Dev 환경 애플리케이션 배포를 ArgoCD가 관리
+#
+# 이전 방식 (Push):
+#   GitHub Actions → kubectl apply -k kustomize/overlays/dev
+#   문제: Drift 감지 불가, CI에 강력한 K8s 권한 필요
+#
+# 현재 방식 (Pull):
+#   ArgoCD → Git 감시 → 변경 감지 → 자동 Sync
+#   장점: Drift 자동 복구, CI에 K8s 권한 불필요
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: exchange-settlement-dev
+  namespace: argocd
+  labels:
+    environment: dev
+    app.kubernetes.io/part-of: exchange-settlement
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/nomad-free/eks-gitops-provisioning.git
+    targetRevision: develop    # 🔑 develop 브랜치 감시
+    path: kustomize/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app-dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true          # ⭐ Drift 자동 복구!
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true  # Namespace가 없으면 자동 생성
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3               # 실패 시 3회 재시도
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m

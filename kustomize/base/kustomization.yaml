@@ -9,12 +9,15 @@ metadata:
 # 순서 중요!
 # 의존성 있는 리소스는 먼저 정의 (Namespace → 나머지)
 resources:
-  - secretstore.yaml # External Secrets가 AWS 연결하는 설정
-  - externalsecret.yaml # SecretStore 필요 
-  - deployment.yaml # ServiceAccount, Secret 참조 
+  - namespace.yaml # 🆕 1순위: 다른 모든 리소스의 컨테이너
+  - serviceaccount.yaml # 🆕 2순위: Deployment에서 참조
+  - rbac.yaml # 🆕 3순위: SA 관련 권한
+  - clustersecretstore.yaml # External Secrets가 AWS 연결하는 설정
+  - externalsecret.yaml # SecretStore 필요
+  - deployment.yaml # ServiceAccount, Secret 참조
   - service.yaml # Deployment 참조
-  - ingress.yaml # 독립적     
-  - networkpolicy.yaml   # 네트워크 보안 정책
+  - ingress.yaml # 독립적
+  - networkpolicy.yaml # 네트워크 보안 정책
 commonLabels:
   # part-of: 이 리소스가 속한 상위 애플리케이션
   app.kubernetes.io/part-of: exchange-settlement
