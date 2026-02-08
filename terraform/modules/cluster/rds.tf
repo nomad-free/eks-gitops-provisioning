@@ -458,53 +458,7 @@ resource "aws_db_instance" "main" {
 # 이 값들은 terraform output 명령으로 확인 가능
 # 배포 후 검증이나 디버깅에 유용
 #
-output "rds_endpoint" {
-  description = "RDS 엔드포인트 (호스트:포트)"
-  value       = "${aws_db_instance.main.address}:${aws_db_instance.main.port}"
-}
 
-output "rds_address" {
-  description = "RDS 호스트명"
-  value       = aws_db_instance.main.address
-}
-
-output "rds_port" {
-  description = "RDS 포트"
-  value       = aws_db_instance.main.port
-}
-
-output "rds_database_name" {
-  description = "데이터베이스 이름"
-  value       = aws_db_instance.main.db_name
-}
-
-output "rds_username" {
-  description = "마스터 사용자명"
-  value       = aws_db_instance.main.username
-}
-
-# 비밀번호는 보안상 출력하지 않음
-# 필요시 Secrets Manager에서 확인
-# output "rds_password" {
-#   description = "마스터 비밀번호"
-#   value       = random_password.db_password.result
-#   sensitive   = true
-# }
-
-output "rds_security_group_id" {
-  description = "RDS 보안 그룹 ID"
-  value       = aws_security_group.rds.id
-}
-
-output "rds_instance_class" {
-  description = "RDS 인스턴스 클래스"
-  value       = aws_db_instance.main.instance_class
-}
-
-output "rds_multi_az" {
-  description = "Multi-AZ 활성화 여부"
-  value       = aws_db_instance.main.multi_az
-}
 
 
 # =============================================================================

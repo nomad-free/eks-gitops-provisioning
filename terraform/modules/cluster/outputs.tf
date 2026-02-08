@@ -95,3 +95,40 @@ output "rds_endpoint" {
   description = "RDS 엔드포인트"
   value       = "${aws_db_instance.main.address}:${aws_db_instance.main.port}"
 }
+
+
+
+output "rds_address" {
+  description = "RDS 호스트명"
+  value       = aws_db_instance.main.address
+}
+
+output "rds_port" {
+  description = "RDS 포트"
+  value       = aws_db_instance.main.port
+}
+
+output "rds_database_name" {
+  description = "데이터베이스 이름"
+  value       = aws_db_instance.main.db_name
+}
+
+output "rds_username" {
+  description = "마스터 사용자명"
+  value       = aws_db_instance.main.username
+}
+
+output "rds_security_group_id" {
+  description = "RDS 보안 그룹 ID"
+  value       = aws_security_group.rds.id
+}
+
+output "rds_instance_class" {
+  description = "RDS 인스턴스 클래스"
+  value       = aws_db_instance.main.instance_class
+}
+
+output "rds_multi_az" {
+  description = "Multi-AZ 활성화 여부"
+  value       = aws_db_instance.main.multi_az
+}
