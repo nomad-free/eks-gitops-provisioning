@@ -1,0 +1,70 @@
+# ============================================
+# 🆕 신규 - argocd/apps/ingress-nginx.yaml
+# ============================================
+# 원본: terraform/ingress-nginx.tf의 helm_release.ingress_nginx
+#
+# 이전: Terraform Helm Release
+# 현재: ArgoCD가 Helm Chart 관리
+#
+# Dev와 Prod에서 다른 values가 필요하므로,
+# 이 파일은 "기본값"이고 환경별 차이는 
+# ArgoCD ApplicationSet이나 별도 파일로 관리 가능
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-nginx
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: addon
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"    # 🆕 ESO 이후, 앱 이전에 설치
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://kubernetes.github.io/ingress-nginx
+    chart: ingress-nginx
+    targetRevision: 4.11.3
+
+    helm:
+      releaseName: ingress-nginx
+      values: |
+        controller:
+          replicaCount: 1  # Dev 기본값, Prod는 별도 파일
+          service:
+            type: LoadBalancer
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-type: nlb
+              service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+              service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          metrics:
+            enabled: true
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: ingress-nginx
+                  app.kubernetes.io/component: controller
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress-nginx
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

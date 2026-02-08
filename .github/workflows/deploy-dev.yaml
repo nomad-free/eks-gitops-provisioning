@@ -1,119 +1,113 @@
+# ============================================
+# ✅ 변경 후 - .github/workflows/deploy-dev.yaml
+# ============================================
+# 변경 사항:
+# 1. kubectl 관련 코드 전체 삭제 (configure, apply, rollout, rollback)
+# 2. 이미지 태그 업데이트 → Git 커밋으로 변경
+# 3. ArgoCD가 Git 변경을 감지하여 자동 배포
+# 4. Health check, Rollback은 ArgoCD가 자동 처리
+#
 name: Deploy to Dev
 
 on:
   workflow_run:
     workflows: ["CI"]
-    types:
-      - completed
-    branches:
-      - develop
+    types: [completed]
+    branches: [develop]
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-# permissions: OIDC 인증에 필요한 권한
+
 permissions:
-  id-token: write # OIDC 토큰 발급
-  contents: read # 코드 읽기
-  packages: write # 패키지 쓰기 (ECR)
-# env: 환경변수 (GitHub Variables에서 가져옴)
+  id-token: write
+  contents: write # 🔄 read → write (Git push 필요)
+  packages: write
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
   ENVIRONMENT: dev
 
 jobs:
   build-and-deploy:
     name: 🏗️ Build & Deploy (Dev)
     runs-on: ubuntu-latest
-    environment: dev # ⭐ GitHub Environment 사용 (Secret 분리)
-    if: ${{ github.event.workflow_run.conclusion == 'success' }} # CI가 "성공"했을 때만 실행
+    environment: dev
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-      # Step 1: 코드 체크아웃
       - name: 📥 Checkout code
         uses: actions/checkout@v5
-      # Step 2: AWS 인증 (OIDC)
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }} # Push 권한 필요
+
       - name: 🔐 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-session-name: gha-dev-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
-      # Step 3: ECR 로그인
+
       - name: 🔐 Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-      # Step 4: Docker Buildx 설정
+
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      # Step 5: Docker 이미지 빌드 & ECR Push
+
       - name: 🐳 Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: ./app
           push: true
-          build-args: |
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-            GIT_SHA=${{ github.sha }}
-            VERSION=${{ steps.meta.outputs.version }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest-dev
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:dev-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      # Step 6: kubectl 설정
-      - name: 🔧 Setup kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: "latest"
 
-      - name: 🔗 Configure kubectl
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }}
-      - name: 🚀 Deploy to Dev
+      # ─────────────────────────────────────────
+      # 🆕 ArgoCD 방식: 이미지 태그 업데이트 → Git Commit
+      # ─────────────────────────────────────────
+      # 이전: kubectl apply -k . (Push 방식)
+      # 현재: kustomize 파일 수정 → git push (Pull 방식)
+      # ArgoCD가 develop 브랜치 변경을 감지 → 자동 Sync
+      #
+      - name: 🔄 Update image tag in Kustomize
         run: |
           cd kustomize/overlays/dev
 
-          # 이미지 태그 업데이트
+          # kustomize CLI로 이미지 태그 업데이트
           kustomize edit set image \
-            app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest-dev
+            app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:dev-${{ github.sha }}
 
-          # 배포 (SA는 이미 Terraform에서 생성됨)
-          kubectl apply -k .
-
-          # 롤아웃 대기
-          kubectl rollout status deployment/app -n app-dev --timeout=180s
-
-      - name: 🏥 Run health check
+      - name: 📤 Commit and push image tag update
         run: |
-          kubectl port-forward svc/app-svc 8080:80 -n app-dev &
-          PF_PID=$!
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          MAX_RETRIES=15
-          for i in $(seq 1 $MAX_RETRIES); do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              http://localhost:8080/api/v1/health 2>/dev/null || echo "000")
-            if [ "$HTTP_STATUS" = "200" ]; then
-              echo "✅ Health check passed! (attempt $i)"
-              kill $PF_PID 2>/dev/null || true
-              exit 0
-            fi
-            echo "⏳ Attempt $i/$MAX_RETRIES - HTTP $HTTP_STATUS"
-            sleep 5
-          done
+          git add kustomize/overlays/dev/kustomization.yaml
 
-          kill $PF_PID 2>/dev/null || true
-          echo "❌ Health check failed after $MAX_RETRIES attempts"
-          exit 1
+          # 변경사항이 있을 때만 커밋
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore(dev): update image to dev-${{ github.sha }} [skip ci]"
+            git push
+          fi
 
-      - name: ⏪ Rollback on failure
-        if: failure()
-        run: |
-          kubectl rollout undo deployment/app -n app-dev
-          kubectl rollout status deployment/app -n app-dev --timeout=120s
+          # [skip ci]: 이 커밋이 CI를 다시 트리거하지 않도록 방지
+          # ArgoCD가 이 변경을 감지 → 자동 배포
+
+      # ─────────────────────────────────────────
+      # ❌ 삭제된 단계들:
+      # - kubectl 설정 (ArgoCD가 클러스터 내부에서 처리)
+      # - kubectl apply (ArgoCD가 Git Sync)
+      # - rollout status (ArgoCD Health Check)
+      # - health check (ArgoCD Sync Health)
+      # - rollback (ArgoCD 자동 롤백)
+      # ─────────────────────────────────────────
 
       - name: 📢 Notify Slack
         if: always()
@@ -125,11 +119,11 @@ jobs:
             {
               "text": "Dev Deploy: ${{ job.status }}",
               "blocks": [
-                 {
+                {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Dev Deploy Finished* :${{ job.status == 'success' && 'white_check_mark' || 'x' }}:\nBranch: `develop`"
+                    "text": "*Dev Image Updated* :${{ job.status == 'success' && 'white_check_mark' || 'x' }}:\nImage: `dev-${{ github.sha }}`\nArgoCD will auto-sync shortly."
                   }
                 }
               ]

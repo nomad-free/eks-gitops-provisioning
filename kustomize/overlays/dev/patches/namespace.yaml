@@ -1,0 +1,15 @@
+# ============================================
+# 🆕 신규 - kustomize/overlays/dev/patches/namespace.yaml
+# ============================================
+# Kustomize의 namespace: 필드는 Namespace 리소스의 metadata.name을
+# 변경하지 않으므로, 명시적 패치가 필요합니다.
+#
+# 이 패치가 없으면:
+# - "app"이라는 이름의 Namespace가 생성됨 (app-dev가 아닌!)
+# - 다른 리소스들은 namespace: app-dev에 배포 시도
+# - 💥 Namespace 불일치로 배포 실패
+#
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-dev

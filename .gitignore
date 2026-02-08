@@ -106,3 +106,13 @@ sh.sh
 # OS Specific
 .DS_Store
 Thumbs.db
+
+# Terraform (새 디렉토리 구조)
+terraform/modules/cluster/.terraform/
+terraform/environments/dev/.terraform/
+terraform/environments/prod/.terraform/
+terraform/environments/dev/.terraform.lock.hcl
+terraform/environments/prod/.terraform.lock.hcl
+
+# ArgoCD credentials (Git에 커밋 금지!)
+argocd/repo-credentials.yaml

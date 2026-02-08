@@ -10,6 +10,7 @@ resources:
 commonLabels:
   environment: prod
 patches:
+  - path: patches/namespace.yaml 
   - path: patches/deployment.yaml
   - path: patches/ingress.yaml
   - path: patches/externalsecret.yaml

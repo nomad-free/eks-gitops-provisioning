@@ -1,22 +1,11 @@
-# GitOps 인프라 관리 흐름:
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │  1. 개발자가 terraform 파일 수정                                            │
-# │  2. PR 생성 → terraform-plan.yml 실행 → Plan 결과 코멘트                   │
-# │  3. 리뷰어가 Plan 확인 → Approve                                            │
-# │  4. PR Merge                                                                │
-# │  5. ⭐ 이 워크플로우 실행 → terraform apply 자동 실행                       │
-# │  6. 인프라 변경 완료 → Slack 알림                                           │
-# └─────────────────────────────────────────
-# 브랜치별 환경:
-# - develop → dev 환경 (dev.tfvars, backends/dev.hcl)
-# - main → prod 환경 (prod.tfvars, backends/prod.hcl)
+# ============================================
+# ✅ 변경 후 - .github/workflows/terraform-apply.yml
+# ============================================
 name: Terraform Apply
 
 on:
   push:
-    branches:
-      - develop
-      - main
+    branches: [develop, main]
     paths:
       - "terraform/**"
 
@@ -33,54 +22,37 @@ env:
   TF_VERSION: "1.10.0"
 
 jobs:
-  # 🆕 Global Layer (OIDC + ECR)
   global:
     name: 🌐 Terraform Global Apply
     runs-on: ubuntu-latest
-    # Global은 dev Environment의 AWS_ROLE_ARN 사용 (또는 별도 global Environment 생성)
     environment: dev
-
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🔐 Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-session-name: terraform-global-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: 🔧 Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}" }
 
       - name: 📦 Terraform Init (Global)
         working-directory: terraform/global
         run: terraform init -backend-config=backends/global.hcl
 
-      - name: ✅ Terraform Validate (Global)
-        working-directory: terraform/global
-        run: terraform validate
-
-      - name: 📋 Terraform Plan (Global)
-        working-directory: terraform/global
-        run: terraform plan -out=tfplan
-
       - name: 🚀 Terraform Apply (Global)
         working-directory: terraform/global
-        run: terraform apply -auto-approve tfplan
+        run: terraform plan -out=tfplan && terraform apply -auto-approve tfplan
+
   apply:
     name: 🚀 Terraform Apply
     runs-on: ubuntu-latest
-    # GitHub Environments 사용 (환경별 Secret 분리 적용)
+    needs: global
     environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
 
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-      # 환경 변수 설정
+      - uses: actions/checkout@v4
+
       - name: 🎯 Set Environment
         id: env
         run: |
@@ -89,137 +61,30 @@ jobs:
           else
             echo "environment=dev" >> $GITHUB_OUTPUT
           fi
-      # AWS 인증
-      - name: 🔐 Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: terraform-apply-${{ steps.env.outputs.environment }}-${{ github.run_id }}
+          role-session-name: terraform-${{ steps.env.outputs.environment }}-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
-      # Terraform 설정
-      - name: 🔧 Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-      # Terraform Init (환경별 백엔드)
+
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}" }
+
+      # 🔄 핵심 변경: working-directory가 환경별 디렉토리로 변경
       - name: 📦 Terraform Init
-        working-directory: terraform
-        run: terraform init -backend-config=backends/${{ steps.env.outputs.environment }}.hcl
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: terraform init -backend-config=backend.hcl
 
       - name: ✅ Terraform Validate
-        working-directory: terraform
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
         run: terraform validate
-      # Terraform Plan (Apply 전 확인)
+
+      # 🔄 -var-file 불필요! terraform.tfvars가 자동 로드됨
       - name: 📋 Terraform Plan
-        working-directory: terraform
-        run: terraform plan -var-file=${{ steps.env.outputs.environment }}.tfvars -out=tfplan
-      # Terraform Apply (자동 승인)
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
+        run: terraform plan -out=tfplan
+
       - name: 🚀 Terraform Apply
-        working-directory: terraform
+        working-directory: terraform/environments/${{ steps.env.outputs.environment }}
         run: terraform apply -auto-approve tfplan
-
-      - name: 📤 Record Outputs
-        if: success()
-        working-directory: terraform
-        run: |
-          echo "### ✅ Terraform Apply Successful" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Environment** | \`${{ steps.env.outputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Actor** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### Terraform Outputs" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          terraform output -no-color >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-      # Slack 알림 - 성공
-      - name: 📢 Notify Slack - Success
-        if: success()
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "✅ Terraform Apply Success",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "✅ Terraform Apply Successful",
-                    "emoji": true
-                  }
-                },
-                {
-                  "type": "section",
-                  "fields": [
-                    { "type": "mrkdwn", "text": "*Environment:*\n`${{ steps.env.outputs.environment }}`" },
-                    { "type": "mrkdwn", "text": "*Branch:*\n`${{ github.ref_name }}`" },
-                    { "type": "mrkdwn", "text": "*Actor:*\n`${{ github.actor }}`" },
-                    { "type": "mrkdwn", "text": "*Commit:*\n`${{ github.sha }}`" }
-                  ]
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": { "type": "plain_text", "text": "View Workflow" },
-                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                    }
-                  ]
-                }
-              ]
-            }
-
-      # Slack 알림 - 실패
-      - name: 📢 Notify Slack - Failure
-        if: failure()
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "❌ Terraform Apply Failed",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "❌ Terraform Apply Failed",
-                    "emoji": true
-                  }
-                },
-                {
-                  "type": "section",
-                  "fields": [
-                    { "type": "mrkdwn", "text": "*Environment:*\n`${{ steps.env.outputs.environment }}`" },
-                    { "type": "mrkdwn", "text": "*Branch:*\n`${{ github.ref_name }}`" }
-                  ]
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "⚠️ *Immediate attention required!*"
-                  }
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": { "type": "plain_text", "text": "🔍 View Logs" },
-                      "style": "danger",
-                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                    }
-                  ]
-                }
-              ]
-            }

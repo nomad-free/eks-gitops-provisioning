@@ -1,3 +1,31 @@
+# 📌 섹션 4: External Secrets IRSA (IAM Role for ServiceAccount)# IRSA란?
+# - Kubernetes ServiceAccount에 IAM Role 연결
+# - Pod 레벨에서 AWS 권한 제어
+
+module "external_secrets_irsa" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  # [2025.09 출시] IAM Module v5.50.0
+  version   = "5.50.0"
+  role_name = "${local.cluster_name}-external-secrets"
+  # attach_external_secrets_policy: External Secrets 전용 정책 자동 연결
+  # AWS에서 미리 만들어둔 정책으로 Secrets Manager 읽기 권한 부여
+  attach_external_secrets_policy = true
+  # 이 시크릿들만 읽을 수 있음 (최소 권한 원칙)
+  external_secrets_secrets_manager_arns = [
+    aws_secretsmanager_secret.app.arn
+  ]
+  # EKS OIDC Provider와 연결하여 ServiceAccount ↔ IAM Role 매핑
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["external-secrets:external-secrets"]
+    }
+  }
+  tags = local.common_tags
+}
+
+
+
 # "AWS Secrets Manager 시크릿 생성 + External Secrets Operator 설치 + IRSA 설정"
 
 resource "random_password" "jwt_secret" {
@@ -71,8 +99,8 @@ resource "aws_secretsmanager_secret_version" "app_db_credentials" {
 
 
     # secret_string 내에서:
-    JWT_SECRET = random_password.jwt_secret.result
     API_KEY    = random_password.api_key.result
+    API_SECRET = "REPLACE_ME"
 
 
     # =========================================================================
@@ -140,53 +168,5 @@ resource "aws_secretsmanager_secret_version" "cicd" {
   }
 }
 
-# 📌 섹션 3: External Secrets Operator 설치
-resource "helm_release" "external_secrets" {
-  name = "external-secrets"
 
-  repository = "https://charts.external-secrets.io"
-  chart      = "external-secrets"
-  # - 성능 최적화 및 AWS Secrets Manager 연동 속도 개선
-  version          = "0.12.1"
-  namespace        = "external-secrets"
-  create_namespace = true
-
-  values = [yamlencode({
-    installCRDs = true
-    serviceAccount = {
-      create = true
-      name   = "external-secrets"
-      annotations = {
-        "eks.amazonaws.com/role-arn" = module.external_secrets_irsa.iam_role_arn
-      }
-    }
-  })]
-  depends_on = [time_sleep.wait_for_eks, module.external_secrets_irsa]
-}
-
-# 📌 섹션 4: External Secrets IRSA (IAM Role for ServiceAccount)# IRSA란?
-# - Kubernetes ServiceAccount에 IAM Role 연결
-# - Pod 레벨에서 AWS 권한 제어
-
-module "external_secrets_irsa" {
-  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  # [2025.09 출시] IAM Module v5.50.0
-  version   = "5.50.0"
-  role_name = "${local.cluster_name}-external-secrets"
-  # attach_external_secrets_policy: External Secrets 전용 정책 자동 연결
-  # AWS에서 미리 만들어둔 정책으로 Secrets Manager 읽기 권한 부여
-  attach_external_secrets_policy = true
-  # 이 시크릿들만 읽을 수 있음 (최소 권한 원칙)
-  external_secrets_secrets_manager_arns = [
-    aws_secretsmanager_secret.app.arn
-  ]
-  # EKS OIDC Provider와 연결하여 ServiceAccount ↔ IAM Role 매핑
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["external-secrets:external-secrets"]
-    }
-  }
-  tags = local.common_tags
-}
 

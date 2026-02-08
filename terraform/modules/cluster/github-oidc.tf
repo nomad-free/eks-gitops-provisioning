@@ -1,16 +1,3 @@
-data "terraform_remote_state" "global" {
-  backend = "s3"
-  config = {
-    bucket = "exchange-settlement-123456789"
-    key    = "global/terraform.tfstate"
-    region = "us-east-1"
-  }
-}
-
-locals {
-  github_oidc_provider_arn = data.terraform_remote_state.global.outputs.github_oidc_provider_arn
-  ecr_repository_arn       = data.terraform_remote_state.global.outputs.ecr_repository_arn
-}
 
 
 
@@ -24,7 +11,7 @@ resource "aws_iam_role" "github_actions" {
       {
         Effect = "Allow"
         Principal = {
-          Federated = local.github_oidc_provider_arn
+          Federated = var.github_oidc_provider_arn
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
@@ -67,7 +54,7 @@ resource "aws_iam_role_policy" "ecr_access" {
           "ecr:CompleteLayerUpload"
         ]
         # aws_ecr_repository.app 리소스가 정의되어 있어야 합니다.
-        Resource = local.ecr_repository_arn
+        Resource = var.ecr_repository_arn
       }
     ]
   })

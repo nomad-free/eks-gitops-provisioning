@@ -1,50 +1,45 @@
-# =============================================================================
-# Terraform Makefile
-# =============================================================================
-# 적용 순서: global → dev/prod (항상 global 먼저!)
-# =============================================================================
-
+# ============================================
+# ✅ 변경 후 - terraform/Makefile
+# ============================================
+# -reconfigure 불필요! 각 환경이 독립된 디렉토리
+#
 TF = terraform
 
-# ─── Global (환경 독립) ───
+# ─── Global (변경 없음) ───
 global-init:
-	cd global && $(TF) init -reconfigure -backend-config=backends/global.hcl
-
+	cd global && $(TF) init -backend-config=backends/global.hcl
 global-plan:
 	cd global && $(TF) plan
-
 global-apply:
 	cd global && $(TF) apply
 
-global-output:
-	cd global && $(TF) output
-
-# ─── Dev ───
+# ─── Dev (디렉토리 변경) ───
 dev-init:
-	$(TF) init -reconfigure -backend-config=backends/dev.hcl
+	cd environments/dev && $(TF) init -backend-config=backend.hcl
 
 dev-plan:
-	$(TF) plan -var-file=dev.tfvars
+	cd environments/dev && $(TF) plan
+	# terraform.tfvars가 자동 로드되므로 -var-file 불필요!
 
 dev-apply:
-	$(TF) plan -var-file=dev.tfvars -out=tfplan && $(TF) apply tfplan
+	cd environments/dev && $(TF) plan -out=tfplan && $(TF) apply tfplan
 
 dev-output:
-	$(TF) output
+	cd environments/dev && $(TF) output
 
-# ─── Prod ───
+# ─── Prod (디렉토리 변경) ───
 prod-init:
-	$(TF) init -reconfigure -backend-config=backends/prod.hcl
+	cd environments/prod && $(TF) init -backend-config=backend.hcl
 
 prod-plan:
-	$(TF) plan -var-file=prod.tfvars
+	cd environments/prod && $(TF) plan
 
 prod-apply:
-	$(TF) plan -var-file=prod.tfvars -out=tfplan && $(TF) apply tfplan
+	cd environments/prod && $(TF) plan -out=tfplan && $(TF) apply tfplan
 
 prod-output:
-	$(TF) output
+	cd environments/prod && $(TF) output
 
-# ─── 전체 적용 (순서 보장) ───
+# ─── 안전장치: 전체 적용 ───
 all-dev: global-init global-apply dev-init dev-apply
 all-prod: global-init global-apply prod-init prod-apply

@@ -96,16 +96,12 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
-        working-directory: terraform
-        run: |
-          terraform init -backend-config=backends/${{ matrix.environment }}.hcl
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: terraform init -backend-config=backend.hcl
 
       - name: Terraform Plan
-        id: plan
-        working-directory: terraform
-        run: |
-          terraform plan -var-file=${{ matrix.environment }}.tfvars -no-color -out=tfplan
-        continue-on-error: true
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: terraform plan -no-color -out=tfplan
 
       - name: Comment Plan on PR
         uses: actions/github-script@v7
